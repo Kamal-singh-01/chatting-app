@@ -3,8 +3,14 @@ import { axiosInstance } from "../lib/axios.js"
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 
-const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:5002" : "/";
-
+// Fix the BASE_URL logic for socket connection
+const getSocketUrl = () => {
+  if (import.meta.env.MODE === "development") {
+    return "http://localhost:5002";
+  }
+  // In production, connect to the same domain (Netlify will proxy to backend)
+  return window.location.origin;
+};
 
 export const useAuthStore = create((set, get) => ({
     authUser: null,
@@ -68,7 +74,7 @@ export const useAuthStore = create((set, get) => ({
             set({ authUser: null });
             toast.success("logout successfully");
 
-            get.disconnectSocket();
+            get().disconnectSocket();
         } catch (error) {
             console.log("error in logout useAuthStore");
             toast.error(error.response.data.message);
@@ -94,21 +100,38 @@ export const useAuthStore = create((set, get) => ({
         const { authUser } = get();
         if (!authUser || get().socket?.connected) return;
 
-        const socket = io(BASE_URL, {
+        const socketUrl = getSocketUrl();
+        console.log("Connecting to socket server:", socketUrl);
+
+        const socket = io(socketUrl, {
             query: {
                 userId: authUser._id,
             },
+            transports: ['websocket', 'polling'], // Ensure proper transport
         });
-        socket.connect();
-        set({ socket: socket });
+
+        socket.on("connect", () => {
+            console.log("Socket connected successfully");
+        });
+
+        socket.on("connect_error", (error) => {
+            console.error("Socket connection error:", error);
+        });
 
         socket.on("getOnlineUsers", (userIds) => {
-            set({ onlineUsers: userIds })
-        })
+            console.log("Received online users:", userIds);
+            set({ onlineUsers: userIds });
+        });
+
+        set({ socket: socket });
     },
 
     disconnectSocket: () => {
-        if (get().socket?.connected) get().socket.disconnect();
+        const { socket } = get();
+        if (socket?.connected) {
+            socket.disconnect();
+            set({ socket: null, onlineUsers: [] });
+        }
     }
 
 }));
