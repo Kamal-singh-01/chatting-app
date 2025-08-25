@@ -1,53 +1,49 @@
 import { Server } from "socket.io";
-import http from "http";
-import express from "express";
 
-const app = express();
-const server = http.createServer(app);
-
-// used to store online users
 const userSocketMap = {}; // {userId: socketId}
+let io; // declare io here
 
-// Function to get receiver's socket ID
 export function getReceiverSocketId(userId) {
   return userSocketMap[userId];
 }
 
-const io = new Server(server, {
-  cors: {
-    origin: [process.env.CLIENT_URL || "http://localhost:5173"], // for production use your deployed frontend URL
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-});
+export function getOnlineUsers() {
+  return Object.keys(userSocketMap);
+}
 
-io.on("connection", (socket) => {
-  console.log("A user connected:", socket.id);
+export function initializeSocket(server) {
+  io = new Server(server, {
+    cors: {
+      origin: [process.env.CLIENT_URL || "http://localhost:5173"],
+      methods: ["GET", "POST"],
+      credentials: true
+    },
+  });
 
-  // Get userId from the handshake query
-  const userId = socket.handshake.query.userId;
+  io.on("connection", (socket) => {
+    console.log("A user connected:", socket.id);
 
-  if (userId) {
-    // Store userId and socketId
-    userSocketMap[userId] = socket.id;
-    console.log(`User ${userId} connected with socket ID: ${socket.id}`);
-  }
+    const userId = socket.handshake.query.userId;
 
-  // Emit the online users to all connected clients
-  io.emit("getOnlineUsers", Object.keys(userSocketMap));
-
-  socket.on("disconnect", () => {
-    console.log("A user disconnected:", socket.id);
-
-    // Remove the userId and socketId from the map
     if (userId) {
-      delete userSocketMap[userId];
-      console.log(`User ${userId} disconnected`);
+      userSocketMap[userId] = socket.id;
+      console.log(`User ${userId} connected with socket ID: ${socket.id}`);
+      io.emit("getOnlineUsers", Object.keys(userSocketMap));
     }
 
-    // Emit updated online users to all clients
-    io.emit("getOnlineUsers", Object.keys(userSocketMap));
-  });
-});
+    socket.on("disconnect", () => {
+      console.log("A user disconnected:", socket.id);
 
-export { io, app, server };
+      if (userId) {
+        delete userSocketMap[userId];
+        console.log(`User ${userId} disconnected`);
+        io.emit("getOnlineUsers", Object.keys(userSocketMap));
+      }
+    });
+  });
+
+  return io;
+}
+
+// ✅ Export io so other files can import it
+export { io };
